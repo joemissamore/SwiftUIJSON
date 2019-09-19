@@ -40,45 +40,86 @@ struct CourseRowView: View {
 }
 
 struct ImageViewContainer: View {
-
+    
     @ObservedObject var imageLoader: ImageLoader
-
+    
     init(imageUrl: String) {
         self.imageLoader = ImageLoader(imageUrl: imageUrl)
     }
     
-    func createView(geometry: GeometryProxy) -> some View {
-        
-        if !self.imageLoader.imageData.isEmpty {
-            return AnyView (
-                Image(uiImage: UIImage(data: self.imageLoader.imageData)!)
-                    .resizable()
-                    
-            )
-        }
-        
-            
-        return AnyView (
-            ActivityIndicatorView()
-                .frame(
-                    width: geometry.size.width,
-                    height: geometry.size.height,
-                    alignment: .center)
-        )
-        
-        
+    var activityIndicator: some View {
+        ActivityIndicator(isAnimating: .constant(true), style: .large)
+    }
+    
+    var errorView: some View {
+        /// Error Image
+        Image(systemName: "exclamationmark")
+            .resizable()
+            .scaledToFit()
+            .foregroundColor(.blue)
+            .animation(.easeInOut)
+
+    }
+    
+    var loadedImage: some View {
+        Image(uiImage: UIImage(data: imageLoader.imageData!)!)
+            .resizable()
+            .animation(.easeInOut)
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            self.createView(geometry: geometry)
+        /**
+         This VStack isn't necessary for the layout, but **is** necessary
+         for the animation to take place. Without it you will get the following error:
+         
+            ```
+            Function declares an opaque return type,
+            but has no return statements in its body
+            from which to infer an underlying type
+            ```
+         
+         You can return `AnyView`, but it **wont** render the animation:
+                
+            ```
+            if imageLoader.imageData.isEmpty {
+                return AnyView(activityIndicator)
+            }
+             
+            return AnyView(loadedImage)
+            ```
+         
+         You can *try* to return `AnyView` with the animation:
+         
+            ```
+            AnyView(loadedImage).animate(.someAnimation) // gets same error as above
+            ```
+         
+         */
+        VStack {
+            if imageLoader.errorOccurred {
+                errorView
+            }
+            else if imageLoader.imageData == nil {
+                activityIndicator
+            }
+            else {
+                loadedImage
+            }
         }
+        /** Guarantees the parent container will be filled */
+        .frame(
+            minWidth: 0,
+            maxWidth: .infinity,
+            minHeight: 0,
+            maxHeight: .infinity
+        )
     }
 }
 
 final class ImageLoader: ObservableObject {
-    @Published var imageData = Data()
-
+    @Published var errorOccurred = false
+    @Published var imageData: Data?
+    
     init(imageUrl: String) {
         loadImage(imageUrl: imageUrl)
     }
@@ -86,21 +127,28 @@ final class ImageLoader: ObservableObject {
     func loadImage(imageUrl: String) {
         guard let url = URL(string: imageUrl) else { return }
         URLSession.shared.dataTask(with: url) { (data, response, error) in
-
-            guard let data = data else { return }
             
-            /**
-             
-            DispatchQueue.main.async {
-                self.imageData = data
+            if error != nil {
+                DispatchQueue.main.async {
+                    self.errorOccurred = true
+                }
+                
+                return
             }
-             
-             */
             
-            
-            /// Simulating a delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                self.imageData = data
+            if let data = data {
+                /**
+
+                DispatchQueue.main.async {
+                    self.imageData = data
+                }
+
+                 */
+
+                /// Simulating a delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.imageData = data
+                }
             }
 
         }.resume()
